@@ -1,0 +1,33 @@
+[project]
+name = "hierarchical-uncertainty-network"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "geopandas>=1.1.2",
+    "ipykernel>=7.2.0",
+    "numcodecs<0.13.0",
+    "openslide-bin>=4.0.0.11",
+    "pathlib>=1.0.1",
+    "tiatoolbox>=1.6.0",
+]
+
+[tool.ruff]
+line-length = 88
+src = ["EDA"]
+target-version = "py311"
+extend-exclude = ["*.interactive", "*.ipynb"]
+
+[tool.ruff.lint]
+# E = pycodestyle errors, F = pyflakes, I = isort (import sorting)
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.isort]
+section-order = [
+    "future", 
+    "standard-library", 
+    "third-party", 
+    "first-party", 
+    "local-folder"
+]
