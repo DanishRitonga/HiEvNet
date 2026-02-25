@@ -8,6 +8,7 @@ def view_puma_roi(geojson_path, image_path):
 
     reader = WSIReader.open(image_path)
     width, height = reader.slide_dimensions(resolution=0, units="level")
+    print(f"Image dimensions: {width} x {height}")
     image_array = reader.read_bounds([0, 0, width, height], resolution=0, units="level")
 
     fig, ax = plt.subplots(figsize=(12, 12))  # Widened slightly to fit the legend

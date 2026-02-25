@@ -28,3 +28,5 @@ gdf = load_puma_geojson(geojson_path)
 
 # %%
 view_puma_roi(geojson_path, image_path)
+
+# %%
