@@ -18,12 +18,13 @@ dependencies = [
     "pyarrow>=23.0.1",
     "scipy>=1.14.1",
     "seaborn>=0.13.2",
+    "snakemake>=9.16.3",
     "tiatoolbox>=1.6.0",
 ]
 
 [tool.ruff]
 line-length = 88
-src = ["EDA"]
+src = ["EDA", "gt_generation"]
 target-version = "py311"
 extend-exclude = ["*.interactive", "*.ipynb"]
 

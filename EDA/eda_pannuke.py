@@ -4,27 +4,22 @@ import json
 from pathlib import Path
 from typing import Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
+from gt_generation import _load_parquet_as_df
 from PIL import Image
 
 # %%
 script_dir = Path(__file__).parent
 data_dir = script_dir.parent / "data" / "PanNuke" / "data"
+config_path = script_dir / "pannuke_utils" / "config.json"
 
-folds = [1, 2, 3]
-dfs = []
-for f in folds:
-    parquet_file = data_dir / f"fold{f}-00000-of-00001.parquet"
-    df_fold = pd.read_parquet(parquet_file)
-    print(f"Fold {f} shape: {df_fold.shape}")
-    dfs.append(df_fold)
-
-dfs = pd.concat(dfs, ignore_index=True)
 
 # %%
 
-config_path = script_dir / "pannuke_utils" / "config.json"
+dfs = _load_parquet_as_df(data_dir)
 
 
 def _get_config_map(config_path: Path) -> tuple[dict[int, str], dict[int, str]]:
@@ -111,4 +106,39 @@ def _get_gt_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+df = _get_gt_df(dfs)
 # %%
+# We explode the dataframe once to use it for the category and pair plots
+exploded_df = df.explode("categories").reset_index(drop=True)
+
+# Optional: Set a clean visual style for the plots
+sns.set_theme(style="whitegrid")
+
+# %%
+plt.figure(figsize=(8, 5))
+sns.countplot(data=df, x="tissue", palette="viridis")
+
+plt.title("Distribution of Tissue")
+plt.xlabel("Tissue ID")
+plt.ylabel("Count")
+plt.show()
+
+# %%
+plt.figure(figsize=(8, 5))
+sns.countplot(data=exploded_df, x="categories", palette="magma")
+
+plt.title("Distribution of Individual Categories")
+plt.xlabel("Category ID")
+plt.ylabel("Count")
+plt.show()
+
+# %% Create a matrix of Category vs Tissue counts
+pair_matrix = pd.crosstab(exploded_df["categories"], exploded_df["tissue"])
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(pair_matrix, annot=False, fmt="d", cmap="Blues")
+
+plt.title("Heatmap of Category-Tissue Pairs")
+plt.xlabel("Tissue ID")
+plt.ylabel("Category ID")
+plt.show()
