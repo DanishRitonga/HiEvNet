@@ -55,4 +55,9 @@
   - literally, it's stored as 1 and not 255
   - ``` visible_mask = mask * 255```
 
+- unused for now, images are mainly for instance segmentation for a specific cell type
+  - stiching is possible but too much for now
+  - might implement later
+
+
 = Preprocessing
