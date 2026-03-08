@@ -5,9 +5,12 @@ import yaml
 
 
 class ETLConfig:
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, schema_path: str = None):
         self.config_path = Path(config_path)
+        self.schema_path = Path(schema_path) if schema_path else Path(__file__).parent / 'etl_schema.yaml'
+
         self.raw_config = self._load_yaml()
+        self.schema = self._load_schema()
 
         self.global_settings = self.raw_config.get('global_settings', {})
         self.datasets = self.raw_config.get('datasets', {})
@@ -20,9 +23,23 @@ class ETLConfig:
         with open(self.config_path) as file:
             return yaml.safe_load(file)
 
+    def _load_schema(self) -> dict[str, Any]:
+        if not self.schema_path.exists():
+            raise FileNotFoundError(f'Schema file not found: {self.schema_path}')
+        with open(self.schema_path) as file:
+            return yaml.safe_load(file)
+
     def _validate_schema(self):
-        # --- TWEAK 1: Add root_dir to required globals ---
-        required_globals = ['root_dir', 'output_image_size', 'output_mpp', 'patching_overlap_pct']
+        validation = self.schema.get('validation', {})
+        split_config = self.schema.get('split_separation_config', {})
+        mod_config = self.schema.get('modality_separation_config', {})
+
+        required_globals = validation.get('required_globals', [])
+        dataset_required_keys = validation.get('dataset_required_keys', [])
+        valid_split_seps = validation.get('valid_split_seps', [])
+        valid_mod_seps = validation.get('valid_mod_seps', [])
+
+        # Validate global settings
         for req in required_globals:
             if req not in self.global_settings:
                 raise KeyError(f"Missing required global setting: '{req}'")
@@ -30,41 +47,48 @@ class ETLConfig:
         if not self.datasets:
             raise ValueError("No datasets found in configuration under 'datasets:' key.")
 
-        valid_split_seps = ['physical', 'filename_regex', 'none']
-        valid_mod_seps = ['physical_parallel', 'physical_flat', 'bundled_archive']
-
+        # Validate each dataset
         for dataset_name, d_conf in self.datasets.items():
-            for req in ['root_dir', 'ingestion_method', 'split_separation', 'modality_separation']:
+            # Check required dataset keys
+            for req in dataset_required_keys:
                 if req not in d_conf:
                     raise KeyError(f"Dataset '{dataset_name}' is missing required key: '{req}'")
 
-            if d_conf['split_separation'] not in valid_split_seps:
+            # Validate split_separation
+            split_sep = d_conf['split_separation']
+            if split_sep not in valid_split_seps:
                 raise ValueError(f"Dataset '{dataset_name}': Invalid split_separation")
-            if d_conf['modality_separation'] not in valid_mod_seps:
+
+            split_reqs = split_config.get(split_sep, {})
+            for field in split_reqs.get('required_fields', []):
+                if field not in d_conf:
+                    raise KeyError(f"Dataset '{dataset_name}' missing '{field}'")
+
+            # Validate constraints for split_separation
+            constraints = split_reqs.get('constraints', {})
+            if 'split_dirs_keys_must_end_with' in constraints and field == 'split_dirs':
+                suffix = constraints['split_dirs_keys_must_end_with']
+                for key in d_conf.get('split_dirs', {}):
+                    if not key.endswith(suffix):
+                        raise ValueError(f"Dataset '{dataset_name}': split_dirs key '{key}' must end with '{suffix}'")
+
+            # Validate modality_separation
+            mod_sep = d_conf['modality_separation']
+            if mod_sep not in valid_mod_seps:
                 raise ValueError(f"Dataset '{dataset_name}': Invalid modality_separation")
 
-            if d_conf['split_separation'] == 'physical':
-                if 'split_dirs' not in d_conf:
-                    raise KeyError(f"Dataset '{dataset_name}' missing 'split_dirs'")
-                for key in d_conf['split_dirs']:
-                    if not key.endswith('_dir'):
-                        raise ValueError(f"Dataset '{dataset_name}': split_dirs key '{key}' must end with '_dir'")
+            mod_reqs = mod_config.get(mod_sep, {})
+            for field in mod_reqs.get('required_fields', []):
+                if field not in d_conf:
+                    raise KeyError(f"Dataset '{dataset_name}' missing '{field}'")
 
-            if (d_conf['split_separation'] == 'filename_regex') and (
-                'split_args' not in d_conf or 'regex' not in d_conf['split_args']
-            ):
-                raise KeyError(f"Dataset '{dataset_name}' missing 'split_args.regex'")
-
-            if d_conf['modality_separation'] == 'physical_parallel':
-                if 'modality_dirs' not in d_conf:
-                    raise KeyError(f"Dataset '{dataset_name}' missing 'modality_dirs'")
-                if 'image_dir' not in d_conf['modality_dirs'] or 'mask_dir' not in d_conf['modality_dirs']:
-                    raise KeyError(f"Dataset '{dataset_name}' modality_dirs must contain image_dir and mask_dir")
-
-            if (d_conf['modality_separation'] != 'bundled_archive') and (
-                'modality_pairing_rule' not in d_conf or 'match_extension' not in d_conf['modality_pairing_rule']
-            ):
-                raise KeyError(f"Dataset '{dataset_name}' missing 'modality_pairing_rule.match_extension'")
+            # Validate constraints for modality_separation
+            constraints = mod_reqs.get('constraints', {})
+            if 'modality_dirs_must_contain' in constraints and 'modality_dirs' in d_conf:
+                required_keys = constraints['modality_dirs_must_contain']
+                for key in required_keys:
+                    if key not in d_conf['modality_dirs']:
+                        raise KeyError(f"Dataset '{dataset_name}' modality_dirs must contain '{key}'")
 
     def get_dataset_config(self, dataset_name: str) -> dict[str, Any]:
         """Returns the specific configuration block, with the root_dir fully resolved."""
