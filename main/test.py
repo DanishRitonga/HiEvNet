@@ -1,8 +1,7 @@
 # %%
 from pathlib import Path
 
-from hievnet.data.ETL.config import ETLConfig
-from hievnet.data.ETL.ingestors import BaseDataIngestor
+from hievnet.data.etl import BaseDataIngestor, ETLConfig
 
 
 # 1. Create a dummy subclass for testing
