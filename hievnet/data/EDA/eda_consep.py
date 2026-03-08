@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io
 
-from HUN.data.utils import get_yolo_bbox
+from hievnet.data.utils import get_yolo_bbox
 
 # %% Load a single .mat file
 script_dir = Path(__file__).parent

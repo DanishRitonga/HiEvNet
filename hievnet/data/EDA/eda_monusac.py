@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from HUN.data.utils import decode_image_bytes, get_yolo_bbox, load_parquet_as_df
+from hievnet.data.utils import decode_image_bytes, get_yolo_bbox, load_parquet_as_df
 
 # %%
 script_dir = Path(__file__).parent
