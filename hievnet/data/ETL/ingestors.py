@@ -7,6 +7,12 @@ import polars as pl
 
 
 class BaseDataIngestor(ABC):
+    """Abstract base class for data ingestors.
+
+    Handles file discovery, pairing, and split assignment based on a flexible
+    configuration.
+    """
+
     def __init__(self, root_dir: str, config: dict[str, Any]):
         """Initializes the ingestor, parses the config, and builds the file registry."""
         self.root_dir = Path(root_dir)
@@ -129,8 +135,5 @@ class BaseDataIngestor(ABC):
 
     @abstractmethod
     def process_item(self, row: dict) -> tuple[str, np.ndarray, np.ndarray, dict]:
-        """MUST be implemented by subclasses (e.g., ParquetIngestor, GeoJsonIngestor).
-        Input: A dictionary representing one row from the file_registry.
-        Output: (roi_id, image_array, instance_matrix, category_dict).
-        """
+        """Abstract method to process found data."""
         pass
