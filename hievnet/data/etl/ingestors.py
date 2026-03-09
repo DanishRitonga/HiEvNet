@@ -168,13 +168,11 @@ class ParquetIngestor(BaseDataIngestor):  # noqa: D101
         # Table 2: Masks & Categories (Exploded)
         df_masks = lf.select(['internal_roi_id', mask_col, cat_col]).explode([mask_col, cat_col]).drop_nulls().collect()
 
-        # --- THE FIX: Safely partition the dataframe into a Python dictionary ---
         masks_by_roi = {}
         if not df_masks.is_empty():
             for sub_df in df_masks.partition_by('internal_roi_id'):
-                if len(sub_df) > 0:
-                    roi_key = sub_df['internal_roi_id'][0]
-                    masks_by_roi[roi_key] = sub_df
+                roi_key = sub_df['internal_roi_id'][0]
+                masks_by_roi[roi_key] = sub_df
 
         # Now iterate through the RGB images
         for rgb_row in df_rgb.iter_rows(named=True):
@@ -187,7 +185,7 @@ class ParquetIngestor(BaseDataIngestor):  # noqa: D101
             h, w = image_array.shape[:2]
 
             instance_matrix = np.zeros((h, w), dtype=np.int32)
-            category_dict = {}
+            cats = []
 
             # Fast O(1) dictionary lookup instead of filtering in a loop
             if internal_id in masks_by_roi:
@@ -205,10 +203,12 @@ class ParquetIngestor(BaseDataIngestor):  # noqa: D101
                         mask_array = mask_array[:, :, 0]
 
                     instance_matrix[mask_array > 0] = instance_id
-                    category_dict[instance_id] = category
+                    cats.append(category)
+
+            cats = np.array(cats, dtype=np.int16)
 
             global_roi_id = f'{base_roi_name}_roi_{internal_id}'
-            yield (global_roi_id, image_array, instance_matrix, category_dict)
+            yield (global_roi_id, image_array, instance_matrix, cats)
 
     def _identify_columns(self, schema: pl.Schema) -> tuple[str, str, str]:
         """Dynamically identifies columns based on HuggingFace/Parquet Struct schemas."""
