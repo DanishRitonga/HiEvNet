@@ -90,7 +90,7 @@ for col_name, dtype in schema.items():
     print(dtype)
 
 # %%
-npz_path = Path(__file__).parent.joinpath('debug_test-00000-of-00001_roi_0.npz')
+npz_path = Path(__file__).parent.joinpath('debug_fold1-00000-of-00001_roi_0.npz')
 
 with np.load(npz_path, allow_pickle=True) as data:
     img = data['image']
