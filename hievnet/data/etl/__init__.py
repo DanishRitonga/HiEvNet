@@ -3,9 +3,11 @@ from .config import (
 )
 from .ingestors import (
     BaseDataIngestor,
+    ParquetIngestor,
 )
 
 __all__ = [
     'ETLConfig',
     'BaseDataIngestor',
+    'ParquetIngestor',
 ]
