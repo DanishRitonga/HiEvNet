@@ -2,12 +2,14 @@ from .config import (
     ETLConfig,
 )
 from .ingestors import (
-    BaseDataIngestor,
+    CSVPolygonIngestor,
+    GeoJSONIngestor,
     ParquetIngestor,
 )
 
 __all__ = [
     'ETLConfig',
-    'BaseDataIngestor',
     'ParquetIngestor',
+    'GeoJSONIngestor',
+    'CSVPolygonIngestor',
 ]

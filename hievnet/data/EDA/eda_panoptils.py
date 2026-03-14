@@ -12,7 +12,19 @@ data_dir = script_dir.parent / 'dataset' / 'PanopTILs'
 
 csv_filename = 'TCGA-S3-AA15-DX1_xmin55486_ymin28926_MPP-0.2500_xmin-0_ymin-1024_xmax-1024_ymax-2048'
 
-csv_path = data_dir / 'BootstrapNucleiManualRegions_TCGA_1' / 'tcga' / 'csv' / f'{csv_filename}.csv'
+csv_dir = data_dir.joinpath(
+    'BootstrapNucleiManualRegions_TCGA',
+    'tcga',
+    'csv',
+)
+
+mask_dir = data_dir.joinpath(
+    'BootstrapNucleiManualRegions_TCGA',
+    'tcga',
+    'masks',
+)
+
+csv_path = csv_dir / f'{csv_filename}.csv'
 
 img_path = data_dir.joinpath(
     'BootstrapNucleiManualRegions_TCGA_1',
@@ -33,3 +45,25 @@ img = np.array(img).astype(np.uint8)
 
 plt.imshow(img == 1)
 plt.show()
+
+# %%
+dfs = []
+for files in csv_dir.rglob('*.csv'):
+    df = pd.read_csv(files)
+    dfs.append(df)
+
+# %%
+df = pd.concat(dfs, ignore_index=True)
+
+# %%
+for file in mask_dir.glob('*.png'):
+    print(file.stem)
+    if file.stem == 'TCGA-AN-A0XU-DX1_xmin26118_ymin18441_MPP-0.2500_xmin-4096_ymin-2048_xmax-5120_ymax-3072':
+        img = cv2.imread(str(file))
+        img_array = np.array(img)
+
+        slices = [img_array[:, :, i] for i in range(3)]
+        for slice in slices:
+            plt.imshow(slice, cmap='magma')
+            plt.show()
+        break

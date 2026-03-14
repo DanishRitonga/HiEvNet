@@ -5,3 +5,5 @@
 *.egg-info
 .env
 *.npz
+*.py[cod]
+*$py.class

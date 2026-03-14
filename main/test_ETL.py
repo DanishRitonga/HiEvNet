@@ -14,7 +14,7 @@ config_dir = Path(__file__).parent.joinpath('dataset.yaml')
 print('1. Parsing Configuration...')
 try:
     config_manager = ETLConfig(config_dir)
-    pannuke_config = config_manager.get_dataset_config('PanNuke')
+    pannuke_config = config_manager.get_dataset_config('MoNuSAC')
     print(f'✅ PanNuke config loaded. Resolved Root: {pannuke_config["root_dir"]}')
 except Exception as e:
     print(f'❌ Config parsing failed: {e}')
@@ -37,7 +37,7 @@ except Exception as e:
 print('\n3. Testing Pixel Extraction on the First Parquet File...')
 
 # Grab the very first row from the registry as a Python dictionary
-first_parquet_row = registry.row(0, named=True)
+first_parquet_row = registry.row(1, named=True)
 print(f'Processing archive: {first_parquet_row["image_path"]}')
 
 # Call process_item (this returns the generator)
@@ -68,19 +68,23 @@ for roi_id, image_array, instance_matrix, category_dict in roi_generator:
     plt.tight_layout()
     plt.show()
 
-    export_path = f'debug_{roi_id}.npz'
-    print(f'\n5. Exporting data to {export_path}...')
+    print('=' * 50)
 
-    np.savez_compressed(
-        export_path,
-        image=image_array,
-        instance_matrix=instance_matrix,
-        category_dict=category_dict,  # Wrapped in a list to serialize properly
-    )
-    print('✅ Export complete!')
+    # export_path = f'debug_{roi_id}.npz'
+    # print(f'\n5. Exporting data to {export_path}...')
+
+    # np.savez_compressed(
+    #     export_path,
+    #     image=image_array,
+    #     instance_matrix=instance_matrix,
+    #     category_dict=category_dict,  # Wrapped in a list to serialize properly
+    # )
+    # print('✅ Export complete!')
 
     # Stop after the first one so we don't flood the memory/console
-    break
+    i += 1
+    if i == 50:
+        break
 
 
 # %%
@@ -97,3 +101,14 @@ with np.load(npz_path, allow_pickle=True) as data:
     img = data['image']
     ins_mat = data['instance_matrix']
     cat = data['category_dict']
+
+# %%
+first_parquet_row = registry.row(0, named=True)
+print(f'Processing archive: {first_parquet_row["image_path"]}')
+
+# Call process_item (this returns the generator)
+roi_generator = ingestor.process_item(first_parquet_row)
+
+cats = []
+for _, _, _, category_dict in roi_generator:
+    cats.extend(category_dict)
