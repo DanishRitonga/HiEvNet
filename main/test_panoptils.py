@@ -45,7 +45,7 @@ except Exception as e:
 # %%
 print('\n3. Testing Pixel Extraction on the First CSV File...')
 
-first_row = registry.row(5, named=True)
+first_row = registry.row(10, named=True)
 print(f'Processing ROI: {first_row["roi_id"]}')
 
 try:
