@@ -13,12 +13,19 @@ class BaseDataIngestor(ABC):
     configuration.
     """
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any], global_settings: dict[str, Any]):
         """Initializes the ingestor, parses the config, and builds the file registry."""
         self.root_dir = Path(config.get('root_dir'))
         self.config = config
         self.file_registry: pl.DataFrame = None
+
+        # Dataset-level string-to-string maps
         self.namespace_map = config.get('namespace_map', {})
+        self.tissue_map = config.get('tissue_map', {})
+
+        # Global string-to-integer maps
+        self.global_cell_map = global_settings.get('global_cell_map', {})
+        self.global_tissue_map = global_settings.get('global_tissue_map', {})
 
         # Build the registry immediately upon instantiation
         self._build_registry()
@@ -134,25 +141,39 @@ class BaseDataIngestor(ABC):
             return self.file_registry.filter(pl.col('split') == split)
         return self.file_registry
 
-    def standardize_label(self, raw_label: Any) -> str:
-        """Translates a raw dataset label into the globally standardized ontology.
-
-        Enforces a 'fail-loud' strategy if an unmapped label is discovered.
-        """
+    def standardize_label(self, raw_label: Any) -> int:
+        """Two-step translation: Raw String -> Standard String -> Global Integer."""
         raw_str = str(raw_label)
 
-        # If no map is provided at all, just pass the string through (useful for testing)
-        if not self.namespace_map:
-            return raw_str
-
-        # The Fail-Loud Gatekeeper
+        # Step 1: Translate raw dataset label to standardized string
         if raw_str not in self.namespace_map:
-            raise ValueError(
-                f"Ontology Mapping Error: Found unknown label '{raw_str}' in dataset. "
-                f"Please map this label in the 'namespace_map' config block."
-            )
+            raise ValueError(f"Dataset Mapping Error: Unknown raw label '{raw_str}'. Update dataset 'namespace_map'.")
+        standard_str = self.namespace_map[raw_str]
 
-        return str(self.namespace_map[raw_str])
+        # Step 2: Translate standardized string to global integer
+        if standard_str not in self.global_cell_map:
+            raise ValueError(f"Global Mapping Error: Standard label '{standard_str}' not found in 'global_cell_map'.")
+
+        return self.global_cell_map[standard_str]
+
+    def resolve_tissue(self, raw_tissue_id: Any = None) -> int:
+        """Two-step translation: Raw ID/Type -> Standard Tissue String -> Global Integer."""
+        standard_tissue_str = 'unknown_tissue'
+
+        # Step 1: Resolve the standard string
+        if 'tissue_type' in self.config:
+            standard_tissue_str = str(self.config['tissue_type'])
+        elif raw_tissue_id is not None:
+            raw_str = str(raw_tissue_id)
+            if raw_str not in self.tissue_map:
+                raise ValueError(f"Tissue Mapping Error: Unknown tissue ID '{raw_str}'. Update dataset 'tissue_map'.")
+            standard_tissue_str = self.tissue_map[raw_str]
+
+        # Step 2: Translate to global integer
+        if standard_tissue_str not in self.global_tissue_map:
+            raise ValueError(f"Global Mapping Error: Tissue '{standard_tissue_str}' not found in 'global_tissue_map'.")
+
+        return self.global_tissue_map[standard_tissue_str]
 
     @abstractmethod
     def process_item(self, row: dict) -> tuple[str, np.ndarray, np.ndarray, dict]:

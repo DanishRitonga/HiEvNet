@@ -23,7 +23,7 @@ class GeoJSONIngestor(BaseDataIngestor):
         instance_matrix = np.zeros((h, w), dtype=np.int32)
 
         # Index 0 is permanently reserved for the background class
-        cats = ['background']
+        cats = [0]
 
         # 3. Parse the GeoJSON using the fast Rust backend
         with open(mask_path, 'rb') as f:
@@ -64,9 +64,11 @@ class GeoJSONIngestor(BaseDataIngestor):
             cats.append(standardized_category)
 
         # 5. Lock the categories into a NumPy object array for safe string storage
-        cats_array = np.array(cats, dtype=object)
+        cats_array = np.array(cats, dtype=np.int16)
 
-        return (roi_id, image_array, instance_matrix, cats_array)
+        tissue_origin = self.resolve_tissue()
+
+        return (roi_id, image_array, instance_matrix, cats_array, tissue_origin)
 
     def _extract_category(self, properties: dict, default: str) -> str:
         """Extracts the exact classification name provided by the dataset authors."""

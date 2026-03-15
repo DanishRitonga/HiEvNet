@@ -29,7 +29,7 @@ class CSVPolygonIngestor(BaseDataIngestor):
 
         # 3. Initialize Canvas and Categories
         instance_matrix = np.zeros((h, w), dtype=np.int32)
-        cats = ['background']
+        cats = [0]
 
         # 4. Read the CSV using Polars
         try:
@@ -63,6 +63,8 @@ class CSVPolygonIngestor(BaseDataIngestor):
             cats.append(standardized_category)
 
         # 6. Lock the categories array
-        cats_array = np.array(cats, dtype=object)
+        cats_array = np.array(cats, dtype=np.int16)
 
-        return (roi_id, image_array, instance_matrix, cats_array)
+        tissue_origin = self.resolve_tissue()
+
+        return (roi_id, image_array, instance_matrix, cats_array, tissue_origin)

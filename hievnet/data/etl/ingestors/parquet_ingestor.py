@@ -19,17 +19,17 @@ class ParquetIngestor(BaseDataIngestor):  # noqa: D101
         lf = pl.scan_parquet(parquet_path)
         schema = lf.collect_schema()
 
-        rgb_col, mask_col, cat_col = self._identify_columns(schema)
+        rgb_col, mask_col, cat_col, tissue_col = self._identify_columns(schema)
 
-        if not all([rgb_col, mask_col, cat_col]):
+        if not all([rgb_col, mask_col, cat_col, tissue_col]):
             raise ValueError(
-                f'Could not map all columns in {parquet_path}. RGB: {rgb_col}, Masks: {mask_col}, Cats: {cat_col}'
+                f'Could not map all columns in {parquet_path}. RGB: {rgb_col}, Masks: {mask_col}, Cats: {cat_col}, Tissue: {tissue_col}'
             )
 
         lf = lf.with_row_index('internal_roi_id')
 
         # Table 1: RGB Images
-        df_rgb = lf.select(['internal_roi_id', rgb_col]).collect()
+        df_rgb = lf.select(['internal_roi_id', rgb_col, tissue_col]).collect()
 
         # Table 2: Masks & Categories (Exploded)
         df_masks = lf.select(['internal_roi_id', mask_col, cat_col]).explode([mask_col, cat_col]).drop_nulls().collect()
@@ -47,11 +47,14 @@ class ParquetIngestor(BaseDataIngestor):  # noqa: D101
             rgb_struct = rgb_row[rgb_col]
             rgb_bytes = rgb_struct['bytes'] if isinstance(rgb_struct, dict) else rgb_struct
 
+            raw_tissue_id = rgb_row[tissue_col]
+            tissue_origin = self.resolve_tissue(raw_tissue_id)
+
             image_array = self._decode_image(rgb_bytes, is_mask=False)
             h, w = image_array.shape[:2]
 
             instance_matrix = np.zeros((h, w), dtype=np.int32)
-            cats = []
+            cats = [0]
 
             # Fast O(1) dictionary lookup instead of filtering in a loop
             if internal_id in masks_by_roi:
@@ -73,29 +76,26 @@ class ParquetIngestor(BaseDataIngestor):  # noqa: D101
                     category = self.standardize_label(category)
                     cats.append(category)
 
-            cats = np.array(cats, dtype=object)
+            cats = np.array(cats, dtype=np.int16)
 
             global_roi_id = f'{base_roi_name}_roi_{internal_id}'
-            yield (global_roi_id, image_array, instance_matrix, cats)
+            yield (global_roi_id, image_array, instance_matrix, cats, tissue_origin)
 
-    def _identify_columns(self, schema: pl.Schema) -> tuple[str, str, str]:
-        """Dynamically identifies columns based on HuggingFace/Parquet Struct schemas."""
-        rgb_col, mask_col, cat_col = None, None, None
+    def _identify_columns(self, schema: pl.Schema) -> tuple[str, str, str, str]:
+        rgb_col, mask_col, cat_col, tissue_col = None, None, None, None
 
         for col_name, dtype in schema.items():
-            # Match RGB: Struct with 'bytes' (or raw Binary fallback)
             if isinstance(dtype, pl.Struct) or dtype == pl.Binary:
                 rgb_col = col_name
-
-            # Match Masks: List of Structs (or List of Binary fallback)
             elif isinstance(dtype, pl.List) and (isinstance(dtype.inner, pl.Struct) or dtype.inner == pl.Binary):
                 mask_col = col_name
-
-            # Match Categories: List of Integers
             elif isinstance(dtype, pl.List) and dtype.inner in [pl.Int64, pl.Int32, pl.UInt32, pl.Int8]:
                 cat_col = col_name
+            # The new check: A standalone integer column
+            elif dtype in [pl.Int64, pl.Int32, pl.UInt32, pl.Int8] and not isinstance(dtype, pl.List):
+                tissue_col = col_name
 
-        return rgb_col, mask_col, cat_col
+        return rgb_col, mask_col, cat_col, tissue_col
 
     def _decode_image(self, byte_string: bytes, is_mask: bool = False) -> np.ndarray:
         """Helper to convert raw bytes back into numpy arrays using OpenCV."""

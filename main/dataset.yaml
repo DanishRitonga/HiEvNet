@@ -100,61 +100,61 @@ datasets:
 
 
 # -- optional additions ---
-  PanNuke:
-    root_dir: "PanNuke/data"
-    ingestion_method: 1
-    split_separation: "filename_regex"
-    split_args:
-      regex: "(fold[1-3])"
-    modality_separation: "bundled_archive"
+  # PanNuke:
+  #   root_dir: "PanNuke/data"
+  #   ingestion_method: 1
+  #   split_separation: "filename_regex"
+  #   split_args:
+  #     regex: "(fold[1-3])"
+  #   modality_separation: "bundled_archive"
 
-    namespace_map:
-      '0': 'Neoplastic'
-      '1': 'Inflammatory'
-      '2': 'Connective'
-      '3': 'Dead'
-      '4': 'Epithelial'
-    tissue_map:
-      '0': 'Adrenal Gland'
-      '1': 'Bile Duct'
-      '2': 'Bladder'
-      '3': 'Breast'
-      '4': 'Cervix'
-      '5': 'Colorectal'
-      '6': 'Esophagus'
-      '7': 'Head & Neck'
-      '8': 'Kidney'
-      '9': 'Liver'
-      '10': 'Lung'
-      '11': 'Ovarian'
-      '12': 'Pancreatic'
-      '13': 'Prostate'
-      '14': 'Skin'
-      '15': 'Stomach'
-      '16': 'Testis'
-      '17': 'Thyroid'
-      '18': 'Uterus'
+  #   namespace_map:
+  #     '0': 'Neoplastic'
+  #     '1': 'Inflammatory'
+  #     '2': 'Connective'
+  #     '3': 'Dead'
+  #     '4': 'Epithelial'
+  #   tissue_map:
+  #     '0': 'Adrenal Gland'
+  #     '1': 'Bile Duct'
+  #     '2': 'Bladder'
+  #     '3': 'Breast'
+  #     '4': 'Cervix'
+  #     '5': 'Colorectal'
+  #     '6': 'Esophagus'
+  #     '7': 'Head & Neck'
+  #     '8': 'Kidney'
+  #     '9': 'Liver'
+  #     '10': 'Lung'
+  #     '11': 'Ovarian'
+  #     '12': 'Pancreatic'
+  #     '13': 'Prostate'
+  #     '14': 'Skin'
+  #     '15': 'Stomach'
+  #     '16': 'Testis'
+  #     '17': 'Thyroid'
+  #     '18': 'Uterus'
 
-  CoNSeP:
-    root_dir: "CoNSeP"
-    ingestion_method: 3
-    split_separation: "physical"
-    split_dirs:
-      train_dir: "Train"
-      test_dir: "Test"
-    modality_separation: "physical_parallel"
-    modality_dirs:
-      image_dir: "Images"
-      mask_dir: "Labels"
-    modality_pairing_rule:
-      match_extension: ".mat"
+  # CoNSeP:
+  #   root_dir: "CoNSeP"
+  #   ingestion_method: 3
+  #   split_separation: "physical"
+  #   split_dirs:
+  #     train_dir: "Train"
+  #     test_dir: "Test"
+  #   modality_separation: "physical_parallel"
+  #   modality_dirs:
+  #     image_dir: "Images"
+  #     mask_dir: "Labels"
+  #   modality_pairing_rule:
+  #     match_extension: ".mat"
 
-    namespace_map:
-      '1' : 'Other'
-      '2' : 'Inflammatory'
-      '3' : 'Epithelial'
-      '4' : 'Epithelial'
-      '5' : 'fibroblast'
-      '6' : 'Muscle'
-      '7' : 'Endothelial'
-    tissue_type: "Colorectal"
+  #   namespace_map:
+  #     '1' : 'Other'
+  #     '2' : 'Inflammatory'
+  #     '3' : 'Epithelial'
+  #     '4' : 'Epithelial'
+  #     '5' : 'fibroblast'
+  #     '6' : 'Muscle'
+  #     '7' : 'Endothelial'
+  #   tissue_type: "Colorectal"
