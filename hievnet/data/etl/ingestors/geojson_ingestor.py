@@ -6,7 +6,7 @@ from ._base import BaseDataIngestor
 
 
 class GeoJSONIngestor(BaseDataIngestor):
-    def process_item(self, row: dict) -> dict:
+    def process_item(self, row: dict) -> tuple:
         image_path = row['image_path']
         mask_path = row['mask_path']
         roi_id = row['roi_id']
@@ -28,6 +28,8 @@ class GeoJSONIngestor(BaseDataIngestor):
             annotations_array, cat_array = self._extract_polygon_annotations(geo_data, image_array), None
         elif self.annotation_type == 'instance_mask':
             annotations_array, cat_array = self._extract_ins_segmentation_annotations(geo_data, image_array)
+        elif self.annotation_type == 'raycast':
+            annotations_array, cat_array = self._extract_raycast_annotations(geo_data, image_array), None
         else:
             raise ValueError(f'Unsupported annotation_type: {self.annotation_type}')
 
@@ -126,3 +128,7 @@ class GeoJSONIngestor(BaseDataIngestor):
         Returns a binary mask array of shape (H, W) or (H, W, num_classes).
         """
         raise NotImplementedError('Instance segmentation annotation extraction not yet implemented')
+
+    def _extract_raycast_annotations(self, geo_data: dict, image_array: np.ndarray) -> np.ndarray:
+        """Extracts raycast annotations from GeoJSON."""
+        raise NotImplementedError('RayCast annotation extraction not yet implemented')

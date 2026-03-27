@@ -228,7 +228,7 @@ class BaseDataIngestor(ABC):
                 poly_arr[:-1] = np.round(poly_arr[:-1] * self.scale_factor)
                 scaled_annotations.append(poly_arr.astype(np.int32))
 
-        elif self.annotation_type == 'star_convex':
+        elif self.annotation_type == 'raycast':
             # Format: (N, 2 + R + 1) -> [center_x, center_y, ray_1, ..., ray_R, class_id]
             scaled_annotations = annotations.copy()
             # Scale centers and ray lengths. The class_id at the end remains untouched.

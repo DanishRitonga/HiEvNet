@@ -28,6 +28,8 @@ class CSVPolygonIngestor(BaseDataIngestor):
             annotations_array, cat_array = self._extract_bbox_annotations(df, image_array), None
         elif self.annotation_type == 'polygon':
             annotations_array, cat_array = self._extract_polygon_annotations(df, image_array), None
+        elif self.annotation_type == 'raycast':
+            annotations_array, cat_array = self._extract_raycast_annotations(df, image_array), None
         else:
             raise ValueError(f'Unsupported annotation_type: {self.annotation_type}')
 
@@ -109,3 +111,11 @@ class CSVPolygonIngestor(BaseDataIngestor):
         Returns an array of polygons with their class labels.
         """
         raise NotImplementedError('Polygon annotation extraction not yet implemented')
+
+    def _extract_raycast_annotations(self, df: pl.DataFrame, image_array: np.ndarray) -> np.ndarray:
+        """Extracts raycast annotations from CSV.
+
+        TODO: Implement raycast annotation extraction from CSV coordinates.
+        Returns an array of raycast annotations with their class labels.
+        """
+        raise NotImplementedError('Raycast annotation extraction not yet implemented')
