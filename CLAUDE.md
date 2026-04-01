@@ -1,0 +1,93 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+This project uses `uv` (Python 3.11).
+
+```bash
+# Install dependencies
+uv sync
+
+# Lint
+uv run ruff check .
+
+# Format
+uv run ruff format .
+
+# Run a script
+uv run python hievnet/data/etl/utils/constants.py
+```
+
+No test runner is configured yet. Phase 0 unit tests (see `docs/project.md §18`) are the next testing milestone and should be written as plain `assert`-based scripts.
+
+**Ruff config** (`pyproject.toml`): line length 120, single quotes, Google-style docstrings, isort with `hievnet` as first-party.
+
+## Architecture
+
+**Goal:** Convert Ultralytics YOLOv26 (bounding-box detector) into a raycast polygon detector for Tumour-Infiltrating Lymphocyte (TIL) detection in histopathological WSIs. The authoritative specification is `docs/project.md` — read it before modifying any module.
+
+### Pipeline
+
+```
+YAML config (main/dataset.yaml)
+    ↓  ETLConfig (Pydantic) + IngestionOrchestrator  [NOT YET IMPLEMENTED]
+Ingestors → .npz files  [image + raycast annotations, pixel space]
+    ↓  TransformOrchestrator (SpatialChunker + NormalizerAndPadder)
+.npz tiles  [content_h, content_w preserved]
+    ↓  PolygonTileDataset  [NOT YET IMPLEMENTED]
+[B, 3, H, W] + [M, 36] labels (normalised)
+    ↓  PolygonYOLOv26  [NOT YET IMPLEMENTED]
+Trained weights
+```
+
+### Key modules
+
+**`hievnet/data/etl/ops/`** — Single source of truth for ALL geometry logic. Every caller imports from here; nothing is reimplemented elsewhere. PyTorch variants (`polar_iou_torch`, `angular_smoothness_loss_torch`) use **lazy imports** (`import torch` inside the function body) so this package is safe to import without PyTorch in ETL environments. `decode_pred_xy` is NOT here — it is a method of `PolygonDetectionLoss` only.
+
+**`hievnet/data/etl/utils/constants.py`** — Angular convention, permutation indices, and format indices. Import from here; never recompute inline. Key constants: `RAY_ANGLES`, `FLIP_H_IDX`, `FLIP_V_IDX`, `ROT_INDICES`, `CLASS_IDX=0`, `CX_IDX=1`, `CY_IDX=2`, `RAY_START_IDX=3`, `RAY_END_IDX=35`.
+
+**`hievnet/data/etl/utils/config.py`** — `ETLConfig` wraps a YAML file via Pydantic (`ETLConfigModel`). `annotation_type` is a **global-only** setting — one pipeline run uses one annotation type for all datasets. To ingest with different types, run separate configs.
+
+**`hievnet/data/etl/ingestors/_base.py`** — `BaseDataIngestor` handles file discovery, split assignment, and MPP scaling. Label translation is two-step: raw dataset string → namespace-standard string → global integer (via `namespace_map` + `global_cell_map`). The split column in the Polars registry is always `'split'`.
+
+### Structural note
+
+The plan (`docs/project.md §7`) specifies `hievnet/data/ops/`, `hievnet/data/utils/`, and `hievnet/data/loader/` as top-level siblings of `etl/`. The actual implementation nests them under `etl/`: `hievnet/data/etl/ops/`, `hievnet/data/etl/utils/`, `hievnet/data/etl/loader/`. All import paths must use the actual locations.
+
+### Annotation format
+
+All stages share a single array format — no conversion between ETL and model:
+
+```
+[class_id, cx, cy, d_1, ..., d_32]   shape: (N, 35), float32, pixel space
+```
+
+Collated batch format adds a leading `batch_idx` column: shape `(sum_M, 36)`.
+
+Normalisation (divide by `crop_size=640`) happens **only** in `PolygonTileDataset._normalise()`. Denormalisation at inference must use `crop_size` read from `model.training_args['crop_size']` — never hardcoded.
+
+### .npz schema
+
+Post-`TransformOrchestrator` tiles contain: `image` (uint8, HWC), `annotations` (float32, N×35), `tissue` (int32), `content_h` (int32), `content_w` (int32). Load with backward-compat key: `data.get('annotations', data.get('bboxes'))`.
+
+### Known issues
+
+- **`hievnet/data/etl/loader/__init__.py`** currently contains the raw text of `docs/project.md` (was accidentally written there). It must be restored to a proper Python `__init__.py` before `PolygonTileDataset` is added.
+- `TransformOrchestrator` still uses the old 2-return `normalizer.process_roi()` and saves with `'bboxes'` key — both need updating per `docs/project.md §12.6–12.7`.
+- All three ingestors have `_extract_raycast_annotations()` stubs that raise `NotImplementedError`.
+
+### Implementation order
+
+Follow `docs/project.md §8` strictly — each phase depends only on phases above it:
+
+```
+Phase 0   — ops/ + constants  (mostly done)
+Phase 0.5 — visual round-trip tests
+Phase 1   — raycast extraction in all 3 ingestors
+Phase 1.5 — IngestionOrchestrator
+Phase 2   — SpatialChunker / NormalizerAndPadder / TransformOrchestrator patches
+Phase 3   — PolygonTileDataset + collate_fn
+Phase 4–8 — Model (YOLOv26 modifications in ultralytics/)
+```
