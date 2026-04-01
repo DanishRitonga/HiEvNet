@@ -4,9 +4,11 @@ Core conversion functions between polygon and raycast representations.
 These are used during ETL ingestion and inference decoding.
 """
 
+import collections
+import math
+
 import numpy as np
 from shapely.geometry import LineString, Point, Polygon
-from shapely.prepared import prep
 
 from ..utils.constants import (
     CLASS_IDX,
@@ -22,117 +24,95 @@ from ..utils.constants import (
 
 
 def polygon_to_raycast(
-    polygon: Polygon,
+    poly: Polygon,
     class_id: int,
-    use_representative_point_fallback: bool = True,
-) -> tuple[float, float, np.ndarray, int]:
-    """Convert a Shapely polygon to raycast representation.
-
-    Args:
-        polygon: Shapely Polygon object (must be valid)
-        class_id: Class ID for this annotation
-        use_representative_point_fallback: If True, use representative_point()
-            when centroid falls outside polygon (for highly concave shapes)
+    n_rays: int = 32,
+    fallback_counter: collections.Counter | None = None,
+) -> np.ndarray | None:
+    """Convert a Shapely polygon to a raycast annotation row.
 
     Returns:
-        cx: Centroid x-coordinate (pixel space)
-        cy: Centroid y-coordinate (pixel space)
-        rays: Array of 32 ray distances (pixel space), shape (32,)
-        class_id: Class ID (unchanged)
+        np.ndarray of shape (35,) in unified format:
+            [class_id, cx, cy, d_1, ..., d_32]  — pixel space
+        None if the polygon has zero area or is unrecoverable.
 
-    Raises:
-        ValueError: If polygon is invalid or empty
+    Centroid policy:
+        1. Try area-weighted Shapely centroid.
+        2. If centroid is outside polygon: fall back to representative_point().
+        3. Update cx, cy to whichever point is used for ray casting.
+           Never cast rays from one point and store a different centroid.
+
+    Args:
+        poly: Shapely Polygon to convert.
+        class_id: Integer class label for the annotation.
+        n_rays: Number of radial rays (default 32).
+        fallback_counter: Optional Counter for diagnostic logging.
+            Increments key 'representative_point_fallback' when triggered.
     """
-    # Validate polygon
-    if polygon is None or polygon.is_empty:
-        raise ValueError('Polygon is None or empty')
+    import shapely
 
-    if not polygon.is_valid:
-        # Attempt to fix with buffer(0)
-        polygon = polygon.buffer(0)
-        if polygon.is_empty:
-            raise ValueError('Polygon could not be made valid with buffer(0)')
+    if poly is None or poly.is_empty or poly.area == 0:
+        return None
 
-    # Compute centroid
-    centroid = polygon.centroid
+    poly = poly.buffer(0)  # heal self-intersections
+    if not poly.is_valid or poly.is_empty:
+        return None
+
+    # --- Centroid selection ---
+    centroid = poly.centroid
     cx, cy = centroid.x, centroid.y
 
-    # Check if centroid is inside polygon (for highly concave shapes)
-    if use_representative_point_fallback:
-        if not polygon.contains(Point(cx, cy)):
-            # Fall back to representative point (guaranteed inside)
-            rep_point = polygon.representative_point()
-            cx, cy = rep_point.x, rep_point.y
+    if not poly.contains(Point(cx, cy)):
+        rep = poly.representative_point()
+        cx = rep.x  # UPDATE cx/cy before ray casting
+        cy = rep.y
+        if fallback_counter is not None:
+            fallback_counter['representative_point_fallback'] += 1
 
-    # Prepare polygon for faster ray intersection queries
-    prepared_poly = prep(polygon)
+    # --- R_far: bounding-box diagonal + 10% ---
+    minx, miny, maxx, maxy = poly.bounds
+    bbox_w = maxx - minx
+    bbox_h = maxy - miny
+    R_far = math.sqrt(bbox_w ** 2 + bbox_h ** 2) * 1.1
 
-    # Get bounding box for dynamic R_far
-    minx, miny, maxx, maxy = polygon.bounds
-    bbox_width = maxx - minx
-    bbox_height = maxy - miny
-    # R_far should be large enough to extend beyond polygon boundary
-    R_far = max(bbox_width, bbox_height) * 2.0
+    # --- Ray casting ---
+    shapely.prepare(poly)  # build spatial index once; ~5x faster per-ray query
+    rays = np.zeros(n_rays, dtype=np.float32)
 
-    # Cast 32 rays from centroid
-    rays = np.zeros(N_RAYS, dtype=np.float32)
+    angles = RAY_ANGLES  # from hievnet.data.etl.utils.constants
 
-    for i in range(N_RAYS):
-        angle = RAY_ANGLES[i]
-        cos_a = RAY_COS[i]
-        sin_a = RAY_SIN[i]
+    for i, theta in enumerate(angles):
+        dx = math.cos(theta) * R_far
+        dy = math.sin(theta) * R_far
+        ray_line = LineString([(cx, cy), (cx + dx, cy + dy)])
 
-        # Create ray line from centroid extending in direction `angle`
-        # End point is far enough to cross any boundary
-        end_x = cx + R_far * cos_a
-        end_y = cy + R_far * sin_a
-
-        ray_line = LineString([(cx, cy), (end_x, end_y)])
-
-        # Find intersection with polygon boundary
-        if prepared_poly.intersects(ray_line):
-            intersection = polygon.boundary.intersection(ray_line)
-
-            if intersection.is_empty:
-                rays[i] = 0.0
-            elif intersection.geom_type == 'Point':
-                # Single intersection point
-                dist = np.sqrt((intersection.x - cx) ** 2 + (intersection.y - cy) ** 2)
-                rays[i] = dist
-            elif intersection.geom_type == 'MultiPoint':
-                # Multiple intersections (non-convex polygon)
-                # Take the nearest one to centroid
-                min_dist = np.inf
-                for pt in intersection.geoms:
-                    dist = np.sqrt((pt.x - cx) ** 2 + (pt.y - cy) ** 2)
-                    if dist < min_dist:
-                        min_dist = dist
-                rays[i] = min_dist if min_dist < np.inf else 0.0
-            elif intersection.geom_type == 'LineString':
-                # Ray goes along the boundary (tangent)
-                # Take the nearest point on the line
-                coords = list(intersection.coords)
-                min_dist = np.inf
-                for coord in coords:
-                    dist = np.sqrt((coord[0] - cx) ** 2 + (coord[1] - cy) ** 2)
-                    if dist < min_dist and dist > 1e-6:  # Exclude centroid itself
-                        min_dist = dist
-                rays[i] = min_dist if min_dist < np.inf else 0.0
-            elif intersection.geom_type == 'GeometryCollection':
-                # Mixed geometry types
-                min_dist = np.inf
-                for geom in intersection.geoms:
-                    if geom.geom_type == 'Point':
-                        dist = np.sqrt((geom.x - cx) ** 2 + (geom.y - cy) ** 2)
-                        if dist < min_dist:
-                            min_dist = dist
-                rays[i] = min_dist if min_dist < np.inf else 0.0
-            else:
-                rays[i] = 0.0
-        else:
+        intersection = poly.boundary.intersection(ray_line)
+        if intersection.is_empty:
             rays[i] = 0.0
+            continue
 
-    return cx, cy, rays, class_id
+        if intersection.geom_type == 'Point':
+            ix, iy = intersection.x, intersection.y
+        elif intersection.geom_type == 'LineString':
+            # Ray is tangent to boundary — take nearest endpoint to centroid
+            nearest = min(
+                intersection.coords,
+                key=lambda p: (p[0] - cx) ** 2 + (p[1] - cy) ** 2,
+            )
+            ix, iy = nearest[0], nearest[1]
+        else:
+            # MultiPoint or GeometryCollection — iterate and find nearest
+            pts = (
+                list(intersection.geoms)
+                if hasattr(intersection, 'geoms')
+                else [intersection]
+            )
+            nearest = min(pts, key=lambda p: (p.x - cx) ** 2 + (p.y - cy) ** 2)
+            ix, iy = nearest.x, nearest.y
+
+        rays[i] = math.sqrt((ix - cx) ** 2 + (iy - cy) ** 2)
+
+    return raycast_to_annotation(cx, cy, rays, class_id)
 
 
 def raycast_to_annotation(
@@ -141,7 +121,7 @@ def raycast_to_annotation(
     rays: np.ndarray,
     class_id: int,
 ) -> np.ndarray:
-    """Package raycast data into ETL internal format array.
+    """Package raycast data into unified format array.
 
     Args:
         cx: Centroid x-coordinate
@@ -150,14 +130,13 @@ def raycast_to_annotation(
         class_id: Class ID
 
     Returns:
-        annotation: Array of shape (35,) in ETL format
-            [cx, cy, d_1, ..., d_32, class_id]
+        annotation: Array of shape (35,) — [class_id, cx, cy, d_1, ..., d_32]
     """
     annotation = np.zeros(35, dtype=np.float32)
+    annotation[CLASS_IDX] = float(class_id)
     annotation[CX_IDX] = cx
     annotation[CY_IDX] = cy
     annotation[RAY_START_IDX:RAY_END_IDX] = rays
-    annotation[CLASS_IDX] = class_id
     return annotation
 
 
@@ -178,11 +157,9 @@ def raycast_to_polygon(
     """
     rays = np.asarray(rays, dtype=np.float64)
 
-    # Compute vertices
     vertex_x = cx + rays * RAY_COS
     vertex_y = cy + rays * (-RAY_SIN)  # Image coordinates
 
-    # Create polygon from vertices
     coords = list(zip(vertex_x, vertex_y))
 
     return Polygon(coords)
@@ -209,22 +186,9 @@ def decode_to_vertices(
     cx = np.asarray(cx, dtype=np.float64)
     cy = np.asarray(cy, dtype=np.float64)
 
-    n_polygons = rays.shape[0]
-
-    # Compute vertex coordinates
-    # vertex_x = cx + d_i * cos(θ_i)
-    # vertex_y = cy + d_i * sin(θ_i)
-    # Note: Using image coordinates where Y points down
-
-    # rays: (N, 32)
-    # RAY_COS, RAY_SIN: (32,)
-    # cx, cy: (N,)
-
-    # Broadcast: (N, 32) * (32,) = (N, 32)
     vertex_x = cx[:, np.newaxis] + rays * RAY_COS[np.newaxis, :]
-    vertex_y = cy[:, np.newaxis] + rays * (-RAY_SIN[np.newaxis, :])  # Negate for image coords
+    vertex_y = cy[:, np.newaxis] + rays * (-RAY_SIN[np.newaxis, :])  # Image coords
 
-    # Stack to (N, 32, 2)
     vertices = np.stack([vertex_x, vertex_y], axis=2)
 
     return vertices.astype(np.float32)
