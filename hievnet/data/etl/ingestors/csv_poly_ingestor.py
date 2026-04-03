@@ -1,7 +1,9 @@
 import cv2
 import numpy as np
 import polars as pl
+from shapely.geometry import Polygon
 
+from ..ops import polygon_to_raycast
 from ._base import BaseDataIngestor
 
 
@@ -113,9 +115,44 @@ class CSVPolygonIngestor(BaseDataIngestor):
         raise NotImplementedError('Polygon annotation extraction not yet implemented')
 
     def _extract_raycast_annotations(self, df: pl.DataFrame, image_array: np.ndarray) -> np.ndarray:
-        """Extracts raycast annotations from CSV.
+        """Extracts raycast annotations from CSV polygon coordinates.
 
-        TODO: Implement raycast annotation extraction from CSV coordinates.
-        Returns an array of raycast annotations with their class labels.
+        Returns an array of shape (N, 35) float32 in unified format:
+            [class_id, cx, cy, d_1, ..., d_32] — pixel space.
         """
-        raise NotImplementedError('Raycast annotation extraction not yet implemented')
+        col_map = self.config.get('csv_column_map', {})
+        col_x = col_map.get('x_coords')
+        col_y = col_map.get('y_coords')
+        col_cat = col_map.get('category')
+
+        if not all([col_x, col_y, col_cat]):
+            raise KeyError('Missing required csv_column_map keys. Need x_coords, y_coords, and category.')
+
+        annotations = []
+
+        for cell_row in df.iter_rows(named=True):
+            x_str = cell_row[col_x]
+            y_str = cell_row[col_y]
+
+            if not x_str or not y_str:
+                continue
+
+            x_arr = np.array(x_str.split(','), dtype=np.float64)
+            y_arr = np.array(y_str.split(','), dtype=np.float64)
+
+            if len(x_arr) < 3:
+                continue
+
+            coords = list(zip(x_arr, y_arr))
+            poly = Polygon(coords)
+
+            raw_category = cell_row[col_cat]
+            class_id = self.standardize_label(raw_category)
+
+            ann = polygon_to_raycast(poly, class_id)
+            if ann is not None:
+                annotations.append(ann)
+
+        if annotations:
+            return np.stack(annotations).astype(np.float32)
+        return np.zeros((0, 35), dtype=np.float32)

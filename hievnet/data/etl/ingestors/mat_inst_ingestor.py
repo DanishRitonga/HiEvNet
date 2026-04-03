@@ -29,6 +29,8 @@ class MatInstanceIngestor(BaseDataIngestor):
             annotations_array, cat_array = self._extract_bbox_annotations(mat_data, image_array), None
         elif self.annotation_type == 'instance_mask':
             annotations_array, cat_array = self._extract_ins_segmentation_annotations(mat_data, image_array)
+        elif self.annotation_type == 'raycast':
+            annotations_array, cat_array = self._extract_raycast_annotations(mat_data, image_array), None
         else:
             raise ValueError(f'Unsupported annotation_type: {self.annotation_type}')
 
@@ -107,3 +109,12 @@ class MatInstanceIngestor(BaseDataIngestor):
         Returns tuple of (instance_mask_array, category_array)
         """
         raise NotImplementedError('Instance segmentation annotation extraction not yet implemented')
+
+    def _extract_raycast_annotations(self, mat_data: dict, image_array: np.ndarray) -> np.ndarray:
+        """Extracts raycast annotations from .mat instance map.
+
+        Not needed for Phase 1 — MatInstIngestor uses instance masks, not polygon
+        coordinates. Raycast extraction requires contour extraction from each
+        instance ID's mask, which is deferred to a later phase.
+        """
+        raise NotImplementedError('Raycast annotation extraction not yet implemented for MatInstIngestor')

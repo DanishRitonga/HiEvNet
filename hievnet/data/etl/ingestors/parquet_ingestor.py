@@ -3,7 +3,9 @@ from collections.abc import Generator
 import cv2
 import numpy as np
 import polars as pl
+from shapely.geometry import Polygon
 
+from ..ops import polygon_to_raycast
 from ._base import BaseDataIngestor
 
 
@@ -159,6 +161,52 @@ class ParquetIngestor(BaseDataIngestor):  # noqa: D101
         """
         raise NotImplementedError('Instance segmentation annotation extraction not yet implemented')
 
-    def _extract_raycast_annotations(self, roi_masks_df, mask_col: str, cat_col: str, image_array: np.ndarray):
-        """Extracts raycast annotations from mask contours."""
-        raise NotImplementedError('Raycast annotation extraction not yet implemented')
+    def _extract_raycast_annotations(
+        self, roi_masks_df, mask_col: str, cat_col: str, image_array: np.ndarray
+    ) -> np.ndarray:
+        """Extracts raycast annotations from per-cell binary mask contours.
+
+        Uses CHAIN_APPROX_NONE (not SIMPLE) per §12.3 NOTE-01 — SIMPLE
+        suppresses collinear edge pixels, producing sparser Shapely geometries
+        and causing ray misses on small circular cells.
+
+        Returns an array of shape (N, 35) float32 in unified format:
+            [class_id, cx, cy, d_1, ..., d_32] — pixel space.
+        """
+        annotations = []
+
+        if roi_masks_df is not None:
+            for mask_row in roi_masks_df.iter_rows(named=True):
+                mask_struct = mask_row[mask_col]
+                mask_bytes = mask_struct['bytes'] if isinstance(mask_struct, dict) else mask_struct
+
+                category = mask_row[cat_col]
+                mask_array = self._decode_image(mask_bytes, is_mask=True)
+
+                if mask_array.ndim > 2:
+                    mask_array = mask_array[:, :, 0]
+
+                contours, _ = cv2.findContours(mask_array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+                if not contours:
+                    continue
+
+                # Use largest contour only; ignore spurious noise contours
+                contour = max(contours, key=cv2.contourArea)
+
+                if len(contour) < 3:
+                    continue
+
+                # Contour shape is (M, 1, 2) — squeeze to (M, 2)
+                pts = contour.squeeze(axis=1)
+                coords = [(float(x), float(y)) for x, y in pts]
+                poly = Polygon(coords)
+
+                class_id = self.standardize_label(category)
+                ann = polygon_to_raycast(poly, class_id)
+                if ann is not None:
+                    annotations.append(ann)
+
+        if annotations:
+            return np.stack(annotations).astype(np.float32)
+        return np.zeros((0, 35), dtype=np.float32)

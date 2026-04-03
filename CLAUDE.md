@@ -20,7 +20,12 @@ uv run ruff format .
 uv run python hievnet/data/etl/utils/constants.py
 ```
 
-No test runner is configured yet. Phase 0 unit tests (see `docs/project.md §18`) are the next testing milestone and should be written as plain `assert`-based scripts.
+No test runner is configured yet. Tests are plain `assert`-based scripts:
+
+```bash
+# Phase 0.5 round-trip tests
+uv run python tests/phase_0_5/test_round_trip.py
+```
 
 **Ruff config** (`pyproject.toml`): line length 120, single quotes, Google-style docstrings, isort with `hievnet` as first-party.
 
@@ -74,16 +79,17 @@ Post-`TransformOrchestrator` tiles contain: `image` (uint8, HWC), `annotations` 
 
 ### Known issues
 
-- All three ingestors have `_extract_raycast_annotations()` stubs that raise `NotImplementedError` — Phase 1 work.
+- `MatInstIngestor._extract_raycast_annotations()` is a stub (`NotImplementedError`) — deferred, requires contour extraction from instance maps.
+- Phase 0.5 deferred items (require real datasets): H&E overlay, `d_i` ≤ centroid-to-edge check, zero-ray fraction < 1%.
 
 ### Implementation order
 
 Follow `docs/project.md §8` strictly — each phase depends only on phases above it:
 
 ```
-Phase 0   — ops/ + constants  (mostly done)
-Phase 0.5 — visual round-trip tests
-Phase 1   — raycast extraction in all 3 ingestors
+Phase 0   — ops/ + constants  ✓
+Phase 0.5 — visual round-trip tests  ✓
+Phase 1   — raycast extraction in all 3 ingestors  ✓
 Phase 1.5 — IngestionOrchestrator
 Phase 2   — SpatialChunker / NormalizerAndPadder / TransformOrchestrator patches
 Phase 3   — PolygonTileDataset + collate_fn

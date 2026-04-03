@@ -1,7 +1,9 @@
 import cv2
 import numpy as np
 import orjson
+from shapely.geometry import MultiPolygon, Polygon
 
+from ..ops import polygon_to_raycast
 from ._base import BaseDataIngestor
 
 
@@ -130,5 +132,38 @@ class GeoJSONIngestor(BaseDataIngestor):
         raise NotImplementedError('Instance segmentation annotation extraction not yet implemented')
 
     def _extract_raycast_annotations(self, geo_data: dict, image_array: np.ndarray) -> np.ndarray:
-        """Extracts raycast annotations from GeoJSON."""
-        raise NotImplementedError('RayCast annotation extraction not yet implemented')
+        """Extracts raycast annotations from GeoJSON polygon coordinates.
+
+        Returns an array of shape (N, 35) float32 in unified format:
+            [class_id, cx, cy, d_1, ..., d_32] — pixel space.
+        """
+        features = geo_data.get('features', [])
+        annotations = []
+
+        for feature in features:
+            geom_type = feature.get('geometry', {}).get('type')
+            if geom_type not in ['Polygon', 'MultiPolygon']:
+                continue
+
+            coordinates = feature['geometry']['coordinates']
+            properties = feature.get('properties', {})
+
+            raw_category = self._extract_category(properties, default='unlabeled')
+            class_id = self.standardize_label(raw_category)
+
+            if geom_type == 'Polygon':
+                poly = Polygon(coordinates[0])
+                ann = polygon_to_raycast(poly, class_id)
+                if ann is not None:
+                    annotations.append(ann)
+
+            elif geom_type == 'MultiPolygon':
+                multi = MultiPolygon([Polygon(pc[0]) for pc in coordinates])
+                for poly in multi.geoms:
+                    ann = polygon_to_raycast(poly, class_id)
+                    if ann is not None:
+                        annotations.append(ann)
+
+        if annotations:
+            return np.stack(annotations).astype(np.float32)
+        return np.zeros((0, 35), dtype=np.float32)
